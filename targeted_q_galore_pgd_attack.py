@@ -82,9 +82,11 @@ class GaLoreProjector:
         self.ortho_matrix_zeros = None
         self.ortho_matrix_shape = None
         self.proj_type = proj_type
+
         self.quant = quant
         self.quant_group_size = group_size
         self.quant_n_bit = n_bit
+
         self.past_ortho_vector = None
         self.queue_size = queue_size
         self.queue = []
@@ -248,8 +250,6 @@ def adaptive_pgd_attack_8bit(model, images, labels, eps=0.3, alpha=2/255, iters=
         outputs = model(images)
         model.zero_grad()
         if targeted and target_label is not None:
-            # For a targeted attack, minimize the loss for the target label.
-            # Note: this typically means subtracting the gradient sign.
             target_tensor = torch.full_like(labels, target_label)
             loss = loss_fn(outputs, target_tensor)
         else:
@@ -257,13 +257,12 @@ def adaptive_pgd_attack_8bit(model, images, labels, eps=0.3, alpha=2/255, iters=
         loss.backward()
         grad = images.grad
         grad_flat = grad.view(grad.size(0), -1)
-        low_grad = projector.project(grad_flat, i)
-        low_grad_quant, scales, zeros = quantize_8bit(low_grad, n_bit=8)
-        low_grad_dequant = dequantize_8bit(low_grad_quant, scales, zeros)
-        update_full = projector.project_back(low_grad_dequant)
+        grad_qg = projector.project(grad_flat, i)
+        grad_qg_quant, scales, zeros = quantize_8bit(grad_qg, n_bit=8)
+        grad_qg_dequant = dequantize_8bit(grad_qg_quant, scales, zeros)
+        update_full = projector.project_back(grad_qg_dequant)
         update_full = update_full.view_as(images)
         if targeted and target_label is not None:
-            # For a targeted attack, update in the negative gradient direction.
             adv_images = images - alpha * update_full.sign()
         else:
             adv_images = images + alpha * update_full.sign()
@@ -277,13 +276,10 @@ def adaptive_pgd_attack_8bit(model, images, labels, eps=0.3, alpha=2/255, iters=
 def main():
     dataset = CustomImageNetDataset(root='./imagenet-sample-images', transform=transform, synset2idx=synset2idx)
     num_images = 10
-    # Load pretrained Inception v3.
     model = models.inception_v3(pretrained=True).to(device)
     model.eval()
     
-    # Optionally set targeted attack parameters.
     targeted_attack = True
-    # For example, set the target class to "goldfish" (if present in idx2label).
     target_class = "goldfish"
     if targeted_attack:
         try:
@@ -297,22 +293,19 @@ def main():
 
     for i in range(num_images):
         image, label = dataset[i]
-        image = image.unsqueeze(0)  # add batch dimension
+        image = image.unsqueeze(0)
         label_tensor = torch.tensor([label])
         true_label = idx2label[label]
         
-        # Get original prediction.
         image = image.to(device)
         with torch.no_grad():
             output = model(image)
         orig_pred = output.argmax(dim=1).item()
         orig_pred_label = idx2label[orig_pred]
-        
         print(f"Image {i+1}: True label: {true_label}, Original prediction: {orig_pred_label}")
         if targeted_attack:
             print(f"Image {i+1}: Targeted attack intended to push toward: {target_class}")
         
-        # Run adaptive PGD attack (targeted if requested).
         adv_image = adaptive_pgd_attack_8bit(model, image, label_tensor, eps=0.3, alpha=2/255,
                                              iters=40, device=device, targeted=targeted_attack, target_label=target_idx)
         with torch.no_grad():
@@ -321,17 +314,19 @@ def main():
         adv_pred_label = idx2label[adv_pred]
         print(f"Image {i+1}: Adversarial prediction: {adv_pred_label}")
         
-        # Display original and adversarial images.
         grid_orig = torchvision.utils.make_grid(image.cpu(), normalize=True)
         grid_adv = torchvision.utils.make_grid(adv_image.cpu(), normalize=True)
+        # Rotate images 90 degrees clockwise
+        orig_np = np.rot90(torch.transpose(grid_orig, 0, 2).numpy(), k=-1)
+        adv_np = np.rot90(torch.transpose(grid_adv, 0, 2).numpy(), k=-1)
         plt.figure(figsize=(10,5))
         plt.subplot(1,2,1)
         plt.title(f"Original\nPred: {orig_pred_label}")
-        plt.imshow(torch.transpose(grid_orig, 0, 2).numpy())
+        plt.imshow(orig_np)
         plt.axis('off')
         plt.subplot(1,2,2)
         plt.title(f"Adversarial\nPred: {adv_pred_label}")
-        plt.imshow(torch.transpose(grid_adv, 0, 2).numpy())
+        plt.imshow(adv_np)
         plt.axis('off')
         plt.show()
     
