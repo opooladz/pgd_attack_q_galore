@@ -7,8 +7,7 @@ Image 9: Targeted attack intended to push toward: goldfish
 
 Image 9: Adversarial prediction: goldfish
 
-![image](https://github.com/user-attachments/assets/fd2c33c2-91bd-41ac-9b69-6e2652d730bd)
-
+![image](https://github.com/user-attachments/assets/40c04725-4fd2-4d92-873f-6bc0ec025a15)
 
 
 you need to clone https://github.com/EliSchwartz/imagenet-sample-images.git for imagenet samples 
