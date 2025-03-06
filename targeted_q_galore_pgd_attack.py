@@ -306,8 +306,8 @@ def main():
         if targeted_attack:
             print(f"Image {i+1}: Targeted attack intended to push toward: {target_class}")
         
-        adv_image = adaptive_pgd_attack_8bit(model, image, label_tensor, eps=0.3, alpha=2/255,
-                                             iters=40, device=device, targeted=targeted_attack, target_label=target_idx)
+        adv_image = adaptive_pgd_attack_8bit(model, image, label_tensor, eps=0.3, alpha=0.5/255,
+                                             iters=15, device=device, targeted=targeted_attack, target_label=target_idx)
         with torch.no_grad():
             output_adv = model(adv_image)
         adv_pred = output_adv.argmax(dim=1).item()
